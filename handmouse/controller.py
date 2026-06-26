@@ -11,6 +11,7 @@ Deltas de comportamento implementados aqui:
   D5 notificacao no toggle    -> notify-send em cada troca de estado.
   D7 pausado solta a camera  -> camera so fica aberta enquanto ativo.
   D8 auto-pause por inatividade -> sem mao por cfg.idle_pause_s segundos -> pausa.
+  D9 interruptor por gesto   -> punho alterna pausa SUAVE (cam segue ligada).
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import time
 from .capture import Camera, CameraError
 from .config import Config, load_config
 from .filter import Point2DFilter
-from .gestures import EVENT_CLICK, PinchDetector, pinch_distance
+from .gestures import EVENT_CLICK, FistToggle, PinchDetector, is_fist, others_curled, pinch_distance
 from .output import UinputMouse
 from .tracker import HandTracker
 
@@ -53,6 +54,8 @@ class Controller:
         self.output = UinputMouse()
         self.filter = Point2DFilter(self.cfg.oe_min_cutoff, self.cfg.oe_beta, self.cfg.oe_d_cutoff)
         self.pinch = PinchDetector(self.cfg)
+        self.suspended = False  # D9: pausa SUAVE via gesto (cam segue ligada)
+        self.fist = FistToggle(self.cfg.gesture_dwell_ms) if self.cfg.gesture_toggle == "fist" else None
         self.tracker: HandTracker | None = None
         self.camera: Camera | None = None
 
@@ -81,6 +84,9 @@ class Controller:
             _notify(self.cfg.notify, f"pausado ({reason})")
         else:
             self.last_hand_ms = _now_ms()  # D8: carencia ao reativar
+            self.suspended = False         # reativar (keybind) limpa a suspensao por gesto
+            if self.fist is not None:
+                self.fist.reset()
             log.info("ativo")
             _notify(self.cfg.notify, "ativo")
 
@@ -96,10 +102,27 @@ class Controller:
             self.last_anchor = None
             self.filter.reset()
             self.pinch.reset()
+            if self.fist is not None:
+                self.fist.reset()
             return
 
         lm = hands[0]
         self.last_hand_ms = _now_ms()
+
+        # D9: punho mantido alterna a pausa SUAVE (cam fica ligada p/ ver o gesto de voltar)
+        if self.fist is not None and self.fist.update(is_fist(lm), timestamp_ms):
+            self.suspended = not self.suspended
+            self.last_anchor = None
+            self.filter.reset()
+            self.pinch.reset()
+            estado = "suspenso (gesto)" if self.suspended else "retomado (gesto)"
+            log.info("%s", estado)
+            _notify(self.cfg.notify, estado)
+            return
+
+        if self.suspended:
+            self.last_anchor = None  # congela: nao move nem clica
+            return
 
         anchor = lm[self.cfg.anchor_landmark]
         t = timestamp_ms / 1000.0
@@ -115,8 +138,9 @@ class Controller:
             if abs(dnx) <= thr and abs(dny) <= thr:  # D4: salto impossivel -> ignora
                 self.output.move(round(dnx * self.cfg.gain), round(dny * self.cfg.gain))
 
+        # clique: pinca polegar+indicador, mas NAO quando a mao fecha em punho (D9/A)
         d = pinch_distance(lm, self.cfg)
-        if self.pinch.update(d, timestamp_ms) == EVENT_CLICK:
+        if self.pinch.update(d, timestamp_ms) == EVENT_CLICK and not others_curled(lm):
             self.output.click()
             log.debug("click (d=%.3f)", d)
 

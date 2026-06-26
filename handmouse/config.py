@@ -50,6 +50,9 @@ class Config:
     notify: bool = True             # D5: notify-send no toggle
     teleport_threshold: float = 0.25  # D4: salto impossivel (norm.) -> ignora frame
     idle_pause_s: int = 30          # D8: auto-pausa sem mao por N s (0 = desliga)
+    # D9: gesto interruptor (pausa SUAVE -> cam segue ligada, cursor congela)
+    gesture_toggle: str = "fist"    # "fist" | "off"
+    gesture_dwell_ms: int = 400     # tempo segurando o punho p/ alternar
 
 
 def load_config(path: str | os.PathLike | None = None) -> Config:

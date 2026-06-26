@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from handmouse.config import Config
-from handmouse.gestures import EVENT_CLICK, PinchDetector, pinch_distance
+from handmouse.gestures import EVENT_CLICK, FistToggle, PinchDetector, is_fist, others_curled, pinch_distance
 
 
 def _landmarks(thumb, index, ref_a=(0.0, 0.0), ref_b=(0.0, 0.1)):
@@ -59,3 +59,51 @@ def test_debounce_blocks_fast_toggle():
     assert d.state == "CLOSED"
     assert d.update(0.60, 1100) is None  # passado o debounce -> abre
     assert d.state == "OPEN"
+
+
+def _hand(index=True, middle=True, ring=True, pinky=True):
+    """Mao sintetica: wrist embaixo; ponta esticada = longe do pulso, curvada = perto."""
+    pts = [SimpleNamespace(x=0.0, y=0.0) for _ in range(21)]
+    pts[0] = SimpleNamespace(x=0.5, y=1.0)  # wrist
+    for pip, tip, ext in [(6, 8, index), (10, 12, middle), (14, 16, ring), (18, 20, pinky)]:
+        pts[pip] = SimpleNamespace(x=0.5, y=0.5)
+        pts[tip] = SimpleNamespace(x=0.5, y=(0.1 if ext else 0.6))
+    return pts
+
+
+def test_is_fist_all_curled():
+    assert is_fist(_hand(index=False, middle=False, ring=False, pinky=False)) is True
+
+
+def test_is_fist_false_for_pinch_pose():
+    # pinca: indicador dobrado, mas medio/anelar/mindinho esticados
+    assert is_fist(_hand(index=False, middle=True, ring=True, pinky=True)) is False
+
+
+def test_is_fist_false_open_hand():
+    assert is_fist(_hand()) is False
+
+
+def test_others_curled_needs_all_three():
+    assert others_curled(_hand(middle=False, ring=False, pinky=False)) is True
+    assert others_curled(_hand(middle=False, ring=False, pinky=True)) is False
+    assert others_curled(_hand()) is False
+
+
+def test_fist_toggle_dwell_edge_trigger():
+    ft = FistToggle(400)
+    assert ft.update(True, 0) is False
+    assert ft.update(True, 399) is False
+    assert ft.update(True, 400) is True    # dispara 1x apos o dwell
+    assert ft.update(True, 800) is False   # segurando: nao re-dispara
+    assert ft.update(False, 850) is False  # soltou -> rearma
+    assert ft.update(True, 900) is False
+    assert ft.update(True, 1300) is True   # novo punho -> dispara de novo
+
+
+def test_fist_toggle_reset():
+    ft = FistToggle(400)
+    ft.update(True, 0)
+    ft.update(True, 400)
+    ft.reset()
+    assert ft.update(True, 100) is False   # dwell reiniciado

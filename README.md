@@ -18,10 +18,16 @@ esquerdo** num gesto de pinça (polegar + indicador).
   então Teams/Zoom/Meet podem usá-la normalmente. Como o padrão é estar pausado,
   a câmera fica livre na maior parte do tempo. Ativou o handmouse mas a câmera já
   está em uso por outro app? Ele avisa **"câmera ocupada"** e continua pausado.
+- **Interruptor por gesto (punho).** Com o serviço ativo, fechar a mão em **punho**
+  por ~0,4 s **suspende** o controle (cursor congela, cliques ignorados); fazer o
+  punho de novo **retoma**. É diferente do `SUPER+M`: o gesto é pausa *suave* e a
+  **câmera continua ligada** (precisa enxergar a mão pra ver o punho de volta).
+  Pra liberar a câmera (Teams) use o `SUPER+M`. Config: `gesture_toggle`/`gesture_dwell_ms`.
 - **Clique = pinça.** Encostar polegar no indicador dá **um clique esquerdo**.
-  Histerese + debounce evitam cliques duplos acidentais. Duplo-clique = duas
-  pinças rápidas (o sistema junta). **Só clique esquerdo no MVP** (direito,
-  scroll e arrastar ficam para a v2).
+  Histerese + debounce evitam cliques duplos; e o clique **só conta com os outros
+  dedos abertos** — fechar tudo (punho) não clica. Duplo-clique = duas pinças
+  rápidas (o sistema junta). **Só clique esquerdo no MVP** (direito, scroll e
+  arrastar ficam para a v2).
 - **Notificação no toggle.** Cada vez que ativa/pausa, aparece uma notificação
   (via `notify-send`/mako) dizendo o estado atual.
 - **Sem teleporte.** Um "salto" fisicamente impossível do ponto rastreado (ex.:
@@ -125,6 +131,10 @@ start_paused      = true   # sobe pausado
 notify            = true   # notificação no toggle
 teleport_threshold = 0.25  # salto impossível por frame -> ignorado
 idle_pause_s      = 30     # auto-pausa sem mão por N s (0 = desliga)
+
+# gesto interruptor (pausa suave: câmera fica ligada)
+gesture_toggle    = "fist" # "fist" | "off"
+gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
 ```
 
 ---
@@ -138,6 +148,8 @@ idle_pause_s      = 30     # auto-pausa sem mão por N s (0 = desliga)
 - **Cursor treme parado** → diminua `oe_min_cutoff`.
 - **Cursor com lag ao mover rápido** → aumente `oe_beta`.
 - **Cursor rápido/lento demais** → ajuste `gain`.
+- **Clica fácil / sem fechar o dedo** → diminua `pinch_close_threshold` (ex.: 0.25).
+- **Punho não suspende, ou suspende sem querer** → ajuste `gesture_dwell_ms`, ou desligue com `gesture_toggle = "off"`.
 
 ---
 

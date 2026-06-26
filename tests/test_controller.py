@@ -88,6 +88,7 @@ def _res(lm):
 
 def _fresh(cfg=None):
     c = Controller(cfg or Config())
+    c.cfg.notify = False  # nao dispara notificacoes reais nos testes
     c.output = FakeOut()
     c.filter = IdentFilter()
     c.paused = False
@@ -150,3 +151,56 @@ def test_open_pinch_no_click():
     c = _fresh()
     c.on_result(_res(_landmarks(anchor=(0.5, 0.5), thumb=(0.0, 0.0), index=(0.9, 0.0))), None, 4000)
     assert c.output.clicks == 0
+
+
+def _lm(anchor=(0.5, 0.5), thumb=(0.0, 0.0), index=(0.3, 0.0),
+        middle=True, ring=True, pinky=True):
+    """Como _landmarks, mas tambem posiciona pip/tip de cada dedo p/ deteccao de punho."""
+    pts = [SimpleNamespace(x=0.0, y=0.0) for _ in range(21)]
+    pts[0] = SimpleNamespace(x=0.5, y=1.0)               # wrist / palm_ref_a
+    pts[9] = SimpleNamespace(x=anchor[0], y=anchor[1])   # anchor + palm_ref_b
+    pts[4] = SimpleNamespace(x=thumb[0], y=thumb[1])     # thumb tip
+    pts[6] = SimpleNamespace(x=0.5, y=0.5)               # index pip
+    pts[8] = SimpleNamespace(x=index[0], y=index[1])     # index tip (pinca)
+    for pip, tip, ext in [(10, 12, middle), (14, 16, ring), (18, 20, pinky)]:
+        pts[pip] = SimpleNamespace(x=0.5, y=0.5)
+        pts[tip] = SimpleNamespace(x=0.5, y=(0.1 if ext else 0.6))
+    return pts
+
+
+def test_pinch_click_with_open_fingers_fires():
+    c = _fresh()
+    c.on_result(_res(_lm(thumb=(0.5, 0.45), index=(0.5, 0.5))), None, 1000)
+    assert c.output.clicks == 1
+
+
+def test_fist_pose_suppresses_click():
+    c = _fresh()
+    fist = _lm(thumb=(0.5, 0.58), index=(0.5, 0.6), middle=False, ring=False, pinky=False)
+    c.on_result(_res(fist), None, 0)
+    assert c.output.clicks == 0       # punho nao clica mesmo com polegar+indicador juntos
+    assert c.suspended is False        # dwell ainda nao atingido
+
+
+def test_fist_hold_toggles_soft_suspend():
+    c = _fresh()
+    fist = _lm(thumb=(0.5, 0.58), index=(0.5, 0.6), middle=False, ring=False, pinky=False)
+    c.on_result(_res(fist), None, 0)      # inicia dwell
+    c.on_result(_res(fist), None, 400)    # >= dwell -> suspende
+    assert c.suspended is True
+    # suspenso: pinca normal nao move nem clica
+    c.on_result(_res(_lm(thumb=(0.5, 0.45), index=(0.5, 0.5))), None, 500)
+    assert c.output.clicks == 0
+    assert c.output.moves == []
+    # novo punho retoma
+    c.on_result(_res(fist), None, 600)
+    c.on_result(_res(fist), None, 1000)
+    assert c.suspended is False
+
+
+def test_keybind_reactivate_clears_soft_suspend():
+    c = _fresh()
+    c.suspended = True
+    c.paused = True
+    c._apply_pause(False, "atalho")
+    assert c.suspended is False
