@@ -52,7 +52,12 @@ def _notify(enabled: bool, body: str) -> None:
 class Controller:
     def __init__(self, cfg: Config | None = None):
         self.cfg = cfg or load_config()
-        self.output = UinputMouse()
+        self.output = UinputMouse(
+            fake_smoothness=self.cfg.fake_smoothness,
+            tick_hz=self.cfg.smooth_tick_hz,
+            horizon_ms=self.cfg.smooth_horizon_ms,
+            lead_ratio=self.cfg.smooth_lead_ratio,
+        )
         self.filter = Point2DFilter(self.cfg.oe_min_cutoff, self.cfg.oe_beta, self.cfg.oe_d_cutoff)
         self.pinch = PinchDetector(self.cfg)
         self.suspended = False  # D9: pausa SUAVE via gesto (cam segue ligada)
@@ -82,6 +87,7 @@ class Controller:
             return
         self.paused = paused
         if paused:
+            self.output.clear_motion()
             log.info("pausado (%s)", reason)
             _notify(self.cfg.notify, f"pausado ({reason})")
         else:
@@ -104,6 +110,7 @@ class Controller:
             self.last_anchor = None
             self.filter.reset()
             self.pinch.reset()
+            self.output.clear_motion()
             if self.fist is not None:
                 self.fist.reset()
             return
@@ -117,6 +124,7 @@ class Controller:
             self.last_anchor = None
             self.filter.reset()
             self.pinch.reset()
+            self.output.clear_motion()
             estado = "suspenso (gesto)" if self.suspended else "retomado (gesto)"
             log.info("%s", estado)
             _notify(self.cfg.notify, estado)
@@ -142,7 +150,7 @@ class Controller:
             thr = self.cfg.teleport_threshold
             if abs(dnx) <= thr and abs(dny) <= thr:  # D4: salto impossivel -> ignora
                 g = self.cfg.gain * self._accel_mult(dnx, dny, dt)
-                self.output.move(dnx * g, dny * g)  # float -> output faz o sub-pixel
+                self.output.move(dnx * g, dny * g)  # float -> output faz o sub-pixel + fake smoothness
 
         # clique: pinca polegar+indicador, mas NAO quando a mao fecha em punho (D9/A)
         d = pinch_distance(lm, self.cfg)
@@ -167,6 +175,7 @@ class Controller:
             self.camera = None
         self.last_anchor = None
         self.filter.reset()
+        self.output.clear_motion()
 
     def _open_camera(self) -> bool:
         try:

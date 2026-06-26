@@ -53,6 +53,12 @@ class Config:
     min_tracking_confidence: float = 0.5
     delegate: str = "cpu"          # "cpu" | "gpu" (GPU experimental; ver README)
 
+    # fake smoothness: nao aumenta fps real da camera; so espalha o delta em micro-passos
+    fake_smoothness: bool = True
+    smooth_tick_hz: int = 200
+    smooth_horizon_ms: int = 28
+    smooth_lead_ratio: float = 0.35
+
     # --- deltas de comportamento (ver README) ---
     start_paused: bool = True       # D2: sobe pausado, SUPER+M ativa
     notify: bool = True             # D5: notify-send no toggle

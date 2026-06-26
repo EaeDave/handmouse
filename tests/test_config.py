@@ -14,6 +14,8 @@ def test_defaults():
     assert c.camera_mjpg is True
     assert c.accel is True
     assert c.delegate == "cpu"
+    assert c.fake_smoothness is True
+    assert c.smooth_tick_hz == 200
     assert c.pinch_open_threshold > c.pinch_close_threshold  # histerese
 
 
@@ -27,6 +29,8 @@ def test_load_overrides_subset(tmp_path):
             notify = false
             accel = false
             delegate = "gpu"
+            fake_smoothness = false
+            smooth_tick_hz = 144
             unknown_key = "ignorado"
             """
         )
@@ -37,6 +41,8 @@ def test_load_overrides_subset(tmp_path):
     assert c.notify is False
     assert c.accel is False
     assert c.delegate == "gpu"
+    assert c.fake_smoothness is False
+    assert c.smooth_tick_hz == 144
     assert c.frame_width == 640  # default preservado
 
 
