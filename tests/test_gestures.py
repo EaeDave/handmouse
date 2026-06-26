@@ -4,10 +4,11 @@ from handmouse.config import Config
 from handmouse.gestures import (
     EVENT_PRESS,
     EVENT_RELEASE,
-    FistToggle,
+    HoldTrigger,
     PinchDetector,
     PoseHold,
     is_fist,
+    is_rock_pose,
     is_scroll_pose,
     others_curled,
     pinch_distance,
@@ -37,42 +38,44 @@ def test_pinch_distance_invariant_to_hand_scale():
 
 def test_press_fires_when_closing():
     d = PinchDetector(Config())
-    assert d.update(0.30, 1000) == EVENT_PRESS
+    assert d.update(0.17, 1000) == EVENT_PRESS
     assert d.state == "CLOSED"
 
 
 def test_release_fires_when_opening_again():
     d = PinchDetector(Config())
-    d.update(0.30, 1000)
+    d.update(0.17, 1000)
     assert d.update(0.60, 1200) == EVENT_RELEASE
     assert d.state == "OPEN"
 
 
 def test_no_repeat_press_while_closed():
     d = PinchDetector(Config())
-    d.update(0.30, 1000)
-    assert d.update(0.30, 1100) is None
+    d.update(0.17, 1000)
+    assert d.update(0.17, 1100) is None
 
 
 def test_hysteresis_midzone_keeps_closed():
     d = PinchDetector(Config())
-    d.update(0.30, 1000)
+    d.update(0.17, 1000)
     assert d.update(0.45, 1100) is None
     assert d.state == "CLOSED"
 
 
 def test_debounce_blocks_fast_toggle():
     d = PinchDetector(Config())
-    assert d.update(0.30, 1000) == EVENT_PRESS
+    assert d.update(0.17, 1000) == EVENT_PRESS
     assert d.update(0.60, 1030) is None
     assert d.state == "CLOSED"
     assert d.update(0.60, 1100) == EVENT_RELEASE
     assert d.state == "OPEN"
 
 
-def _hand(index=True, middle=True, ring=True, pinky=True):
+def _hand(thumb=True, index=True, middle=True, ring=True, pinky=True):
     pts = [SimpleNamespace(x=0.0, y=0.0) for _ in range(21)]
     pts[0] = SimpleNamespace(x=0.5, y=1.0)
+    pts[3] = SimpleNamespace(x=0.35, y=0.5)
+    pts[4] = SimpleNamespace(x=(0.10 if thumb else 0.45), y=(0.10 if thumb else 0.75))
     for pip, tip, ext in [(6, 8, index), (10, 12, middle), (14, 16, ring), (18, 20, pinky)]:
         pts[pip] = SimpleNamespace(x=0.5, y=0.5)
         pts[tip] = SimpleNamespace(x=0.5, y=(0.1 if ext else 0.6))
@@ -85,6 +88,8 @@ def _partial_finger_hand():
     for pip, tip in [(6, 8), (10, 12), (14, 16), (18, 20)]:
         pts[pip] = SimpleNamespace(x=0.5, y=0.5)
         pts[tip] = SimpleNamespace(x=0.5, y=0.54)
+    pts[3] = SimpleNamespace(x=0.35, y=0.5)
+    pts[4] = SimpleNamespace(x=0.40, y=0.55)
     return pts
 
 
@@ -102,7 +107,14 @@ def test_is_fist_false_open_hand():
 
 def test_is_fist_false_when_only_partially_closed():
     assert is_fist(_partial_finger_hand()) is False
-    assert others_curled(_partial_finger_hand()) is False
+
+
+def test_is_rock_pose_requires_thumb_index_pinky_up_middle_ring_down():
+    assert is_rock_pose(_hand(thumb=True, index=True, middle=False, ring=False, pinky=True)) is True
+    assert is_rock_pose(_hand(thumb=False, index=True, middle=False, ring=False, pinky=True)) is False
+    assert is_rock_pose(_hand(thumb=True, index=False, middle=False, ring=False, pinky=True)) is False
+    assert is_rock_pose(_hand(thumb=True, index=True, middle=True, ring=False, pinky=True)) is False
+    assert is_rock_pose(_hand(thumb=True, index=True, middle=False, ring=False, pinky=False)) is False
 
 
 def test_scroll_pose_requires_two_extended_and_two_curled():
@@ -127,20 +139,20 @@ def test_pose_hold_dwell():
     assert h.active is False
 
 
-def test_fist_toggle_dwell_edge_trigger():
-    ft = FistToggle(400)
-    assert ft.update(True, 0) is False
-    assert ft.update(True, 399) is False
-    assert ft.update(True, 400) is True
-    assert ft.update(True, 800) is False
-    assert ft.update(False, 850) is False
-    assert ft.update(True, 900) is False
-    assert ft.update(True, 1300) is True
+def test_hold_trigger_dwell_edge_trigger():
+    hold = HoldTrigger(400)
+    assert hold.update(True, 0) is False
+    assert hold.update(True, 399) is False
+    assert hold.update(True, 400) is True
+    assert hold.update(True, 800) is False
+    assert hold.update(False, 850) is False
+    assert hold.update(True, 900) is False
+    assert hold.update(True, 1300) is True
 
 
-def test_fist_toggle_reset():
-    ft = FistToggle(400)
-    ft.update(True, 0)
-    ft.update(True, 400)
-    ft.reset()
-    assert ft.update(True, 100) is False
+def test_hold_trigger_reset():
+    hold = HoldTrigger(400)
+    hold.update(True, 0)
+    hold.update(True, 400)
+    hold.reset()
+    assert hold.update(True, 100) is False

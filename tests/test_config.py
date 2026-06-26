@@ -18,6 +18,12 @@ def test_defaults():
     assert c.scroll_dwell_ms == 220
     assert c.scroll_gain == 60.0
     assert c.pinch_open_threshold > c.pinch_close_threshold
+    assert c.pinch_close_threshold == 0.18
+    assert c.toggle_gesture == "rock"
+    assert c.toggle_dwell_ms == 500
+    assert c.close_window_gesture == "fist"
+    assert c.close_window_dwell_ms == 1000
+    assert c.close_window_command == "hyprctl dispatch killactive"
 
 
 def test_load_overrides_subset(tmp_path):
@@ -33,6 +39,9 @@ def test_load_overrides_subset(tmp_path):
             scroll_enabled = false
             scroll_dwell_ms = 300
             scroll_gain = 80.0
+            toggle_dwell_ms = 1800
+            close_window_dwell_ms = 3000
+            close_window_command = "hyprctl dispatch closewindow"
             unknown_key = "ignorado"
             """
         )
@@ -46,6 +55,9 @@ def test_load_overrides_subset(tmp_path):
     assert c.scroll_enabled is False
     assert c.scroll_dwell_ms == 300
     assert c.scroll_gain == 80.0
+    assert c.toggle_dwell_ms == 1800
+    assert c.close_window_dwell_ms == 3000
+    assert c.close_window_command == "hyprctl dispatch closewindow"
     assert c.frame_width == 640
 
 

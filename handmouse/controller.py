@@ -11,8 +11,9 @@ Deltas de comportamento implementados aqui:
   D5 notificacao no toggle   -> notify-send em cada troca de estado.
   D7 pausado solta a camera  -> camera so fica aberta enquanto ativo.
   D8 auto-pause por inatividade -> sem mao por cfg.idle_pause_s segundos -> pausa.
-  D9 interruptor por gesto   -> punho alterna pausa SUAVE (cam segue ligada).
+  D9 interruptor por gesto   -> rock/ILY alterna pausa SUAVE (cam segue ligada).
   D10 scroll por gesto       -> pose de 2 dedos com dwell entra em modo scroll.
+  D11 fechar janela por gesto -> punho com dwell dispara close da janela focada.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from __future__ import annotations
 import logging
 import math
 import signal
+import shlex
 import subprocess
 import time
 
@@ -29,10 +31,11 @@ from .filter import Point2DFilter
 from .gestures import (
     EVENT_PRESS,
     EVENT_RELEASE,
-    FistToggle,
+    HoldTrigger,
     PinchDetector,
     PoseHold,
     is_fist,
+    is_rock_pose,
     is_scroll_pose,
     others_curled,
     pinch_distance,
@@ -67,7 +70,8 @@ class Controller:
         self.filter = Point2DFilter(self.cfg.oe_min_cutoff, self.cfg.oe_beta, self.cfg.oe_d_cutoff)
         self.pinch = PinchDetector(self.cfg)
         self.suspended = False  # D9: pausa SUAVE via gesto (cam segue ligada)
-        self.fist = FistToggle(self.cfg.gesture_dwell_ms) if self.cfg.gesture_toggle == "fist" else None
+        self.toggle = HoldTrigger(self.cfg.toggle_dwell_ms) if self.cfg.toggle_gesture == "rock" else None
+        self.close_window_hold = HoldTrigger(self.cfg.close_window_dwell_ms) if self.cfg.close_window_gesture == "fist" else None
         self.scroll_hold = PoseHold(self.cfg.scroll_dwell_ms) if self.cfg.scroll_enabled else None
         self.scroll_anchor: tuple[float, float] | None = None
         self.tracker: HandTracker | None = None
@@ -101,8 +105,10 @@ class Controller:
         else:
             self.last_hand_ms = _now_ms()  # D8: carencia ao reativar
             self.suspended = False         # reativar (keybind) limpa a suspensao por gesto
-            if self.fist is not None:
-                self.fist.reset()
+            if self.toggle is not None:
+                self.toggle.reset()
+            if self.close_window_hold is not None:
+                self.close_window_hold.reset()
             if self.scroll_hold is not None:
                 self.scroll_hold.reset()
             self.scroll_anchor = None
@@ -123,8 +129,10 @@ class Controller:
             self.filter.reset()
             self.pinch.reset()
             self.output.reset_state()
-            if self.fist is not None:
-                self.fist.reset()
+            if self.toggle is not None:
+                self.toggle.reset()
+            if self.close_window_hold is not None:
+                self.close_window_hold.reset()
             if self.scroll_hold is not None:
                 self.scroll_hold.reset()
             return
@@ -132,14 +140,21 @@ class Controller:
         lm = hands[0]
         self.last_hand_ms = _now_ms()
 
-        # D9: punho mantido alterna a pausa SUAVE (cam fica ligada p/ ver o gesto de voltar)
-        if self.fist is not None and self.fist.update(is_fist(lm), timestamp_ms):
+        rock_now = is_rock_pose(lm)
+        fist_now = is_fist(lm)
+
+        # D9: gesto rock/ILY mantido alterna a pausa SUAVE (cam fica ligada p/ ver retorno)
+        if self.toggle is not None and self.toggle.update(rock_now, timestamp_ms):
             self.suspended = not self.suspended
             self.last_anchor = None
             self.scroll_anchor = None
             self.filter.reset()
             self.pinch.reset()
             self.output.reset_state()
+            if self.close_window_hold is not None:
+                self.close_window_hold.reset()
+            if self.scroll_hold is not None:
+                self.scroll_hold.reset()
             estado = "suspenso (gesto)" if self.suspended else "retomado (gesto)"
             log.info("%s", estado)
             _notify(self.cfg.notify, estado)
@@ -149,9 +164,28 @@ class Controller:
             self.last_anchor = None  # congela: nao move nem clica
             return
 
+        # D11: punho mantido fecha a janela focada. Enquanto segura punho, congela
+        # cursor/cliques p/ nao trocar foco por acidente antes do dwell completar.
+        if self.close_window_hold is not None and self.close_window_hold.update(fist_now, timestamp_ms):
+            self.last_anchor = None
+            self.scroll_anchor = None
+            self.filter.reset()
+            self.pinch.reset()
+            self.output.reset_state()
+            self._close_window()
+            return
+
         anchor = lm[self.cfg.anchor_landmark]
         t = timestamp_ms / 1000.0
         fx, fy = self.filter.filter(anchor.x, anchor.y, t)
+        if fist_now:
+            self.last_anchor = (fx, fy)
+            self._last_t = t
+            self.scroll_anchor = None
+            if self.scroll_hold is not None:
+                self.scroll_hold.reset()
+            self.output.release_left()
+            return
 
         # D10: pose de scroll (dois dedos) com dwell -> modo scroll vertical
         scroll_pose = self.scroll_hold.update(is_scroll_pose(lm), timestamp_ms) if self.scroll_hold is not None else False
@@ -202,6 +236,31 @@ class Controller:
             return self.cfg.accel_max
         ratio = min(speed / self.cfg.accel_speed, 1.0)
         return self.cfg.accel_min + (self.cfg.accel_max - self.cfg.accel_min) * ratio
+
+    def _close_window(self) -> None:
+        cmd = shlex.split(self.cfg.close_window_command)
+        if not cmd:
+            log.warning("comando de fechar janela vazio")
+            return
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=1.0,
+                check=False,
+            )
+        except FileNotFoundError:
+            log.warning("comando de fechar janela nao encontrado: %s", cmd[0])
+            return
+        except subprocess.TimeoutExpired:
+            log.warning("comando de fechar janela excedeu timeout: %s", cmd[0])
+            return
+        if result.returncode != 0:
+            log.warning("comando de fechar janela falhou: %s (exit %s)", cmd[0], result.returncode)
+            return
+        log.info("fechando janela focada")
+
 
     # ---- camera (main thread) ----------------------------------------------
     def _close_camera(self) -> None:
@@ -313,9 +372,10 @@ def run_tune(cfg: Config | None = None) -> int:
                 f"pinch d={d:5.2f} (close<{cfg.pinch_close_threshold:.2f}) "
                 f"{'PRESS' if press else '     '} "
                 f"{'PUNHO' if is_fist(lm) else '     '} "
+                f"{'ROCK' if is_rock_pose(lm) else '    '} "
                 f"{'SCROLL' if is_scroll_pose(lm) else '      '} | vel={speed:4.1f}/s | fps {fps:4.1f}"
             )
-        print("\r" + msg.ljust(92), end="", flush=True)
+        print("\r" + msg.ljust(100), end="", flush=True)
 
     camera = Camera(cfg.camera_index, cfg.frame_width, cfg.frame_height, cfg.camera_fps, cfg.camera_mjpg)
     tracker = HandTracker(

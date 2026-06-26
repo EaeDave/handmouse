@@ -111,17 +111,24 @@ def _fresh(cfg=None):
 
 
 def _lm(anchor=(0.5, 0.5), thumb=(0.0, 0.0), index=(0.3, 0.0),
-        index_ext=None, middle=True, ring=True, pinky=True):
+        index_ext=None, middle=True, ring=True, pinky=True, thumb_ext=None):
     """Landmarks com pose controlavel.
 
     index_ext:
       None -> usa index tip passado (p/ pinca)
       True/False -> gera pose estendida/curvada p/ index finger
+    thumb_ext:
+      None -> usa thumb tip passado (p/ pinca)
+      True/False -> gera polegar estendido/curvado p/ gesto rock
     """
     pts = [SimpleNamespace(x=0.0, y=0.0) for _ in range(21)]
     pts[0] = SimpleNamespace(x=0.5, y=1.0)               # wrist / palm_ref_a
     pts[9] = SimpleNamespace(x=anchor[0], y=anchor[1])   # anchor + palm_ref_b
-    pts[4] = SimpleNamespace(x=thumb[0], y=thumb[1])     # thumb tip
+    pts[3] = SimpleNamespace(x=0.35, y=0.5)              # thumb IP
+    if thumb_ext is None:
+        pts[4] = SimpleNamespace(x=thumb[0], y=thumb[1])     # thumb tip
+    else:
+        pts[4] = SimpleNamespace(x=(0.1 if thumb_ext else 0.45), y=(0.1 if thumb_ext else 0.75))
     pts[6] = SimpleNamespace(x=0.5, y=0.5)               # index pip
     if index_ext is None:
         pts[8] = SimpleNamespace(x=index[0], y=index[1])
@@ -213,18 +220,44 @@ def test_pinch_with_closed_other_fingers_suppressed():
     assert c.output.presses == 0
 
 
-def test_fist_hold_toggles_soft_suspend():
-    c = _fresh()
+def test_rock_hold_toggles_soft_suspend():
+    c = _fresh(Config(toggle_dwell_ms=500))
+    rock = _lm(thumb_ext=True, index_ext=True, middle=False, ring=False, pinky=True)
+    not_rock = _lm(thumb_ext=True, index_ext=True, middle=True, ring=False, pinky=True)
+    c.on_result(_res(rock), None, 0)
+    c.on_result(_res(rock), None, 499)
+    assert c.suspended is False
+    c.on_result(_res(rock), None, 500)
+    assert c.suspended is True
+    c.on_result(_res(not_rock), None, 600)
+    c.on_result(_res(rock), None, 700)
+    c.on_result(_res(rock), None, 1200)
+    assert c.suspended is False
+
+
+def test_fist_hold_closes_focused_window_without_moving(monkeypatch):
+    c = _fresh(Config(close_window_dwell_ms=1000))
+    calls = []
+    monkeypatch.setattr(c, "_close_window", lambda: calls.append("close"))
     fist = _lm(thumb=(0.5, 0.58), index_ext=False, middle=False, ring=False, pinky=False)
     c.on_result(_res(fist), None, 0)
-    c.on_result(_res(fist), None, 400)
-    assert c.suspended is True
-    c.on_result(_res(_lm(thumb=(0.5, 0.49), index=(0.5, 0.5))), None, 500)
-    assert c.output.presses == 0
+    c.on_result(_res(fist), None, 999)
+    assert calls == []
     assert c.output.moves == []
-    c.on_result(_res(fist), None, 600)
     c.on_result(_res(fist), None, 1000)
-    assert c.suspended is False
+    assert calls == ["close"]
+    assert c.output.moves == []
+
+
+def test_suspended_ignores_fist_close(monkeypatch):
+    c = _fresh(Config(close_window_dwell_ms=1000))
+    c.suspended = True
+    calls = []
+    monkeypatch.setattr(c, "_close_window", lambda: calls.append("close"))
+    fist = _lm(thumb=(0.5, 0.58), index_ext=False, middle=False, ring=False, pinky=False)
+    c.on_result(_res(fist), None, 0)
+    c.on_result(_res(fist), None, 1000)
+    assert calls == []
 
 
 def test_keybind_reactivate_clears_soft_suspend():

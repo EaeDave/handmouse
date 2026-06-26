@@ -1,4 +1,4 @@
-"""Deteccao de pinca, scroll por gesto e punho com dwell.
+"""Deteccao de pinca, scroll por gesto e poses mantidas com dwell.
 
 `pinch_distance` normaliza pela "largura da mao" (wrist <-> MCP medio) para ficar
 invariante a distancia da camera.
@@ -62,6 +62,7 @@ class PinchDetector:
 
 # --- dedos / poses -----------------------------------------------------------
 _WRIST = 0
+_THUMB = (3, 4)
 _INDEX = (6, 8)
 _MIDDLE = (10, 12)
 _RING = (14, 16)
@@ -102,6 +103,17 @@ def is_fist(landmarks) -> bool:
     Polegar fica fora do criterio porque sua pose varia muito entre pessoas/cameras.
     """
     return _curled(landmarks, *_INDEX) and others_curled(landmarks)
+
+
+def is_rock_pose(landmarks) -> bool:
+    """Gesto rock/ILY: polegar + indicador + mindinho estendidos; medio + anelar curvados."""
+    return (
+        _extended(landmarks, *_THUMB)
+        and _extended(landmarks, *_INDEX)
+        and _curled(landmarks, *_MIDDLE)
+        and _curled(landmarks, *_RING)
+        and _extended(landmarks, *_PINKY)
+    )
 
 
 def is_scroll_pose(landmarks) -> bool:
@@ -145,27 +157,27 @@ class PoseHold:
         self.active = False
 
 
-class FistToggle:
-    """Edge-trigger com dwell: punho mantido >= dwell_ms dispara 1 vez; rearma so
-    quando a mao deixa de ser punho (evita flip-flop enquanto segura)."""
+class HoldTrigger:
+    """Edge-trigger com dwell: pose mantida >= dwell_ms dispara 1 vez; rearma so
+    quando a pose quebra (evita repeticao enquanto segura)."""
 
     def __init__(self, dwell_ms: int):
         self.dwell_ms = dwell_ms
-        self._fist_since: int | None = None
+        self._pose_since: int | None = None
         self._fired = False
 
-    def update(self, fist_now: bool, now_ms: int) -> bool:
-        if not fist_now:
-            self._fist_since = None
+    def update(self, pose_now: bool, now_ms: int) -> bool:
+        if not pose_now:
+            self._pose_since = None
             self._fired = False
             return False
-        if self._fist_since is None:
-            self._fist_since = now_ms
-        if not self._fired and (now_ms - self._fist_since) >= self.dwell_ms:
+        if self._pose_since is None:
+            self._pose_since = now_ms
+        if not self._fired and (now_ms - self._pose_since) >= self.dwell_ms:
             self._fired = True
             return True
         return False
 
     def reset(self) -> None:
-        self._fist_since = None
+        self._pose_since = None
         self._fired = False

@@ -50,7 +50,7 @@ class Config:
     oe_d_cutoff: float = 1.0
 
     # pinca (distancia normalizada pelo tamanho da mao)
-    pinch_close_threshold: float = 0.35
+    pinch_close_threshold: float = 0.18
     pinch_open_threshold: float = 0.55   # histerese: open > close
     pinch_debounce_ms: int = 60
 
@@ -64,8 +64,12 @@ class Config:
     teleport_threshold: float = 0.25  # D4: salto impossivel (norm.) -> ignora frame
     idle_pause_s: int = 30          # D8: auto-pausa sem mao por N s (0 = desliga)
     # D9: gesto interruptor (pausa SUAVE -> cam segue ligada, cursor congela)
-    gesture_toggle: str = "fist"    # "fist" | "off"
-    gesture_dwell_ms: int = 400     # tempo segurando o punho p/ alternar
+    toggle_gesture: str = "rock"  # "rock" | "off"
+    toggle_dwell_ms: int = 500    # rock/ILY segurado p/ alternar
+    # D11: punho segurado fecha a janela focada (Hyprland)
+    close_window_gesture: str = "fist"  # "fist" | "off"
+    close_window_dwell_ms: int = 1000   # seguranca contra fechar sem querer
+    close_window_command: str = "hyprctl dispatch killactive"
 
 
 def load_config(path: str | os.PathLike | None = None) -> Config:

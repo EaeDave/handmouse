@@ -6,6 +6,7 @@ esquerdo** num gesto de pinça (polegar + indicador).
 
 ---
 
+<!-- business-readme:business-rules:start -->
 ## Como funciona (regras de comportamento)
 
 - **Controle relativo, tipo trackpad com "clutch".** O cursor anda conforme o
@@ -18,11 +19,15 @@ esquerdo** num gesto de pinça (polegar + indicador).
   então Teams/Zoom/Meet podem usá-la normalmente. Como o padrão é estar pausado,
   a câmera fica livre na maior parte do tempo. Ativou o handmouse mas a câmera já
   está em uso por outro app? Ele avisa **"câmera ocupada"** e continua pausado.
-- **Interruptor por gesto (punho).** Com o serviço ativo, fechar a mão em **punho**
-  por ~0,4 s **suspende** o controle (cursor congela, cliques ignorados); fazer o
-  punho de novo **retoma**. É diferente do `SUPER+M`: o gesto é pausa *suave* e a
-  **câmera continua ligada** (precisa enxergar a mão pra ver o punho de volta).
-  Pra liberar a câmera (Teams) use o `SUPER+M`. Config: `gesture_toggle`/`gesture_dwell_ms`.
+- **Interruptor por gesto (rock/ILY).** Com o serviço ativo, manter o gesto
+  **polegar + indicador + mindinho para cima, médio + anelar para baixo** por
+  ~0,5 s **suspende** o controle (cursor congela, cliques ignorados); repetir
+  o gesto por ~0,5 s **retoma**. É diferente do `SUPER+M`: o gesto é pausa
+  *suave* e a **câmera continua ligada** (precisa enxergar a mão pra ver o gesto
+  de volta). Config: `toggle_gesture`/`toggle_dwell_ms`.
+- **Fechar janela focada (punho).** Com o serviço ativo e não suspenso, fechar a mão em **punho**
+  por ~1 s dispara `hyprctl dispatch killactive`. Durante esse dwell o cursor
+  fica congelado para não trocar o foco por acidente.
 - **Clique e arrastar = pinça.** Fechar polegar+indicador faz **botão esquerdo down**;
   abrir de novo faz **up**. Se você só fecha e abre rápido, vira clique normal. Se
   mantiver fechado e mover a mão, vira **drag**. A pinça **só conta com os outros
@@ -44,6 +49,9 @@ esquerdo** num gesto de pinça (polegar + indicador).
 > Suavização por **One Euro Filter**, com **sub-pixel accumulation** (movimento fino
 > não se perde) e **aceleração adaptativa** (devagar = preciso, rápido = veloz).
 
+<!-- business-readme:business-rules:end -->
+
+<!-- business-readme:technical:start -->
 ---
 
 ## Instalação
@@ -101,7 +109,7 @@ bindd = SUPER CTRL, M, Handmouse start, exec, systemctl --user start handmouse.s
 ```bash
 handmouse run        # inicia o daemon (default)
 handmouse selftest   # verifica: /dev/uinput gravável, câmera abre, modelo presente
-handmouse tune       # mostra ao vivo pinch/punho/scroll/velocidade/fps (não mexe no mouse)
+handmouse tune       # mostra ao vivo pinch/punho/rock/scroll/velocidade/fps (não mexe no mouse)
 ```
 
 Logs: `journalctl --user -u handmouse -f`. Nível: `HANDMOUSE_LOG=DEBUG`.
@@ -137,7 +145,7 @@ oe_min_cutoff = 1.0   # menor = mais estável parado
 oe_beta       = 10.0  # maior = menos lag em movimento rápido
 
 # pinça (distância normalizada pelo tamanho da mão)
-pinch_close_threshold = 0.35
+pinch_close_threshold = 0.18
 pinch_open_threshold  = 0.55
 pinch_debounce_ms     = 60
 
@@ -151,8 +159,13 @@ teleport_threshold = 0.25  # salto impossível por frame -> ignorado
 idle_pause_s      = 30     # auto-pausa sem mão por N s (0 = desliga)
 
 # gesto interruptor (pausa suave: câmera fica ligada)
-gesture_toggle    = "fist" # "fist" | "off"
-gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
+toggle_gesture       = "rock" # "rock" | "off"
+toggle_dwell_ms      = 500    # rock/ILY segurado p/ alternar
+
+# gesto de fechar janela focada
+close_window_gesture  = "fist" # "fist" | "off"
+close_window_dwell_ms = 1000   # segurança contra fechar sem querer
+close_window_command  = "hyprctl dispatch killactive"
 ```
 
 > **GPU / RTX 3060 (mapeado, experimental):** já existe o knob `delegate = "gpu"`
@@ -172,8 +185,9 @@ gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
 - **Cursor treme parado** → diminua `oe_min_cutoff`.
 - **Cursor com lag ao mover rápido** → aumente `oe_beta`.
 - **Cursor rápido/lento demais** → ajuste `gain`.
-- **Clica fácil / sem fechar o dedo** → diminua `pinch_close_threshold` (ex.: 0.16).
-- **Punho não suspende, ou suspende sem querer** → ajuste `gesture_dwell_ms`, ou desligue com `gesture_toggle = "off"`.
+- **Clica fácil / sem fechar o dedo** → diminua `pinch_close_threshold` (ex.: 0.16); **demora pra clicar** → aumente levemente (ex.: 0.20).
+- **Gesto rock não suspende, ou suspende sem querer** → ajuste `toggle_dwell_ms`, ou desligue com `toggle_gesture = "off"`.
+- **Punho não fecha janela, ou fecha fácil demais** → ajuste `close_window_dwell_ms`, ou desligue com `close_window_gesture = "off"`.
 - **Scroll entra fácil demais** → aumente `scroll_dwell_ms`.
 - **Scroll fraco/forte demais** → ajuste `scroll_gain`.
 - **Muito preciso mas lento / rápido mas arisco** → ajuste `accel_min`, `accel_max`, `accel_speed`.
@@ -190,3 +204,4 @@ uv run --with pytest python -m pytest -q
 Os testes cobrem a lógica pura (One Euro Filter, detecção de pinça/scroll/punho, config, output).
 As partes de hardware (câmera, uinput no Wayland) são validadas via `selftest` e na
 bancada.
+<!-- business-readme:technical:end -->
