@@ -39,10 +39,8 @@ esquerdo** num gesto de pinça (polegar + indicador).
   morrer e retoma no mesmo estado quando ela volta.
 
 > Suavização por **One Euro Filter**, com **sub-pixel accumulation** (movimento fino
-> não se perde), **aceleração adaptativa** (devagar = preciso, rápido = veloz) e
-> **fake smoothness** opcional: o uinput emite micro-passos em alta taxa entre os
-> frames da webcam. Isso **não aumenta o fps real da câmera**; só faz o cursor
-> parecer menos "aos trancos".
+> não se perde) e **aceleração adaptativa** (devagar = preciso, rápido = veloz).
+> Ajuste fino em `gain` / `accel_*` / `oe_min_cutoff` / `oe_beta`.
 
 ---
 
@@ -120,18 +118,13 @@ frame_height = 480
 camera_fps   = 30
 camera_mjpg  = true   # tenta MJPG p/ segurar fps e baixar latência
 
+
 # sensibilidade do movimento (norm. -> pixels)
 gain = 2500.0
 accel       = true
 accel_min   = 0.4     # ganho efetivo ao mover devagar (precisão)
 accel_max   = 2.0     # ganho efetivo ao mover rápido (velocidade)
 accel_speed = 2.5     # vel. normalizada (un/s) p/ atingir accel_max
-
-# fake smoothness (não cria fps real da câmera)
-fake_smoothness  = true
-smooth_tick_hz   = 200
-smooth_horizon_ms = 28
-smooth_lead_ratio = 0.35
 
 # suavização (One Euro Filter)
 oe_min_cutoff = 1.0   # menor = mais estável parado
@@ -177,9 +170,6 @@ gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
 - **Punho não suspende, ou suspende sem querer** → ajuste `gesture_dwell_ms`, ou desligue com `gesture_toggle = "off"`.
 - **Muito preciso mas lento / rápido mas arisco** → ajuste `accel_min`, `accel_max`, `accel_speed`.
 - **Quer calibrar vendo números ao vivo** → pare o serviço e rode `handmouse tune`.
-- **Quer o cursor menos aos trancos em monitor rápido** → deixe `fake_smoothness = true`.
-  Aumente `smooth_tick_hz` (ex.: 200) e/ou `smooth_horizon_ms`; reduza `smooth_lead_ratio`
-  se quiser mais suavidade, ou aumente se quiser menos sensação de atraso.
 
 ---
 
@@ -189,6 +179,6 @@ gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
 uv run --with pytest python -m pytest -q
 ```
 
-Os testes cobrem a lógica pura (One Euro Filter, detecção de pinça, config, output).
-As partes de hardware (câmera, uinput no Wayland) são validadas via `selftest` e na
+Os testes cobrem a lógica pura (One Euro Filter, detecção de pinça, config). As
+partes de hardware (câmera, uinput no Wayland) são validadas via `selftest` e na
 bancada.
