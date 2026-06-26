@@ -16,10 +16,6 @@ uv pip install --python "${VENV_DIR}/bin/python" -e "${REPO_DIR}"
 echo "==> baixando modelo"
 bash "${REPO_DIR}/scripts/download-model.sh"
 
-echo "==> dependencias do backend pipewire (compartilhar a camera com chamadas)"
-sudo pacman -S --needed --noconfirm gstreamer gst-plugins-base gst-plugins-good gst-plugin-pipewire \
-  || echo "(aviso: nao instalei pacotes gstreamer; capture_backend=pipewire pode nao funcionar)"
-
 echo "==> regra udev (sudo)"
 sudo cp "${REPO_DIR}/udev/99-uinput.rules" /etc/udev/rules.d/99-uinput.rules
 sudo udevadm control --reload

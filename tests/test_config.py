@@ -14,7 +14,6 @@ def test_defaults():
     assert c.camera_mjpg is True
     assert c.accel is True
     assert c.delegate == "cpu"
-    assert c.capture_backend == "v4l2"
     assert c.scroll_enabled is True
     assert c.scroll_dwell_ms == 220
     assert c.scroll_gain == 60.0
@@ -34,7 +33,6 @@ def test_load_overrides_subset(tmp_path):
             scroll_enabled = false
             scroll_dwell_ms = 300
             scroll_gain = 80.0
-            capture_backend = "pipewire"
             unknown_key = "ignorado"
             """
         )
@@ -48,7 +46,6 @@ def test_load_overrides_subset(tmp_path):
     assert c.scroll_enabled is False
     assert c.scroll_dwell_ms == 300
     assert c.scroll_gain == 80.0
-    assert c.capture_backend == "pipewire"
     assert c.frame_width == 640
 
 
