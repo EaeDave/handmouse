@@ -23,7 +23,7 @@ import signal
 import subprocess
 import time
 
-from .capture import Camera, CameraError
+from .capture import CameraError, open_camera
 from .config import Config, load_config
 from .filter import Point2DFilter
 from .gestures import (
@@ -215,7 +215,7 @@ class Controller:
 
     def _open_camera(self) -> bool:
         try:
-            self.camera = Camera(self.cfg.camera_index, self.cfg.frame_width, self.cfg.frame_height, self.cfg.camera_fps, self.cfg.camera_mjpg)
+            self.camera = open_camera(self.cfg)
         except CameraError as exc:
             log.warning("%s", exc)
             return False
@@ -317,7 +317,7 @@ def run_tune(cfg: Config | None = None) -> int:
             )
         print("\r" + msg.ljust(92), end="", flush=True)
 
-    camera = Camera(cfg.camera_index, cfg.frame_width, cfg.frame_height, cfg.camera_fps, cfg.camera_mjpg)
+    camera = open_camera(cfg)
     tracker = HandTracker(
         cfg.model_path,
         on_result,

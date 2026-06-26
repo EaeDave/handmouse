@@ -18,6 +18,10 @@ esquerdo** num gesto de pinça (polegar + indicador).
   então Teams/Zoom/Meet podem usá-la normalmente. Como o padrão é estar pausado,
   a câmera fica livre na maior parte do tempo. Ativou o handmouse mas a câmera já
   está em uso por outro app? Ele avisa **"câmera ocupada"** e continua pausado.
+- **Compartilhar a câmera (modo PipeWire).** Com `capture_backend = "pipewire"`, o
+  handmouse consome a webcam via PipeWire em vez de abrir o `/dev/video` direto —
+  aí dá pra **usar a câmera no Teams/Discord ao mesmo tempo** (desde que o app também
+  use a câmera via PipeWire). Veja a seção "Compartilhar a câmera" abaixo.
 - **Interruptor por gesto (punho).** Com o serviço ativo, fechar a mão em **punho**
   por ~0,4 s **suspende** o controle (cursor congela, cliques ignorados); fazer o
   punho de novo **retoma**. É diferente do `SUPER+M`: o gesto é pausa *suave* e a
@@ -119,6 +123,9 @@ frame_width  = 640
 frame_height = 480
 camera_fps   = 30
 camera_mjpg  = true   # tenta MJPG p/ segurar fps e baixar latência
+# backend de captura: "v4l2" (exclusivo) | "pipewire" (compartilha a câmera)
+capture_backend = "v4l2"
+# pipewire_target = ""   # nó pipewire específico (vazio = câmera default)
 
 # sensibilidade do movimento (norm. -> pixels)
 gain = 2500.0
@@ -163,6 +170,33 @@ gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
 
 ---
 
+## Compartilhar a câmera (PipeWire)
+
+Por padrão o handmouse abre a webcam direto no V4L2 (`capture_backend = "v4l2"`),
+que é **exclusivo**: enquanto ativo, nenhum outro app pega a câmera. Por isso o
+`SUPER+M` (pausa) libera a câmera pro Teams/Discord.
+
+Pra usar **ao mesmo tempo**, ligue o modo PipeWire:
+
+```toml
+capture_backend = "pipewire"
+```
+
+Como funciona: o handmouse vira um cliente PipeWire da câmera (via
+`gst-launch pipewiresrc`). O PipeWire passa a ser o único dono do `/dev/video` e
+distribui os frames para vários clientes — então handmouse + chamada leem a mesma
+câmera ao mesmo tempo.
+
+Requisitos:
+- `gstreamer` + `gst-plugin-pipewire` (o `install.sh` instala).
+- **O outro app também precisa usar a câmera via PipeWire.** Apps Chromium/Electron
+  (Discord, Teams web, etc.) às vezes precisam do flag de câmera PipeWire: em
+  `chrome://flags` procure "PipeWire" / "WebRTC PipeWire", ou rode com
+  `--enable-features=WebRtcPipeWireCamera`. Se o app abrir o V4L2 direto, ainda há
+  conflito (use o `SUPER+M`).
+
+---
+
 ## Troubleshooting
 
 - **`selftest` falha em uinput** → você não está no grupo `input` ou a regra udev
@@ -178,6 +212,8 @@ gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
 - **Scroll fraco/forte demais** → ajuste `scroll_gain`.
 - **Muito preciso mas lento / rápido mas arisco** → ajuste `accel_min`, `accel_max`, `accel_speed`.
 - **Quer calibrar vendo números ao vivo** → pare o serviço e rode `handmouse tune`.
+- **Usar a câmera no Teams/Discord ao mesmo tempo** → `capture_backend = "pipewire"` (veja "Compartilhar a câmera").
+- **Modo pipewire não abre** → confirme `gst-launch-1.0` + `gst-plugin-pipewire`; senão volte pra `capture_backend = "v4l2"`.
 
 ---
 

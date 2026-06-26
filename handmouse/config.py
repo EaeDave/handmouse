@@ -22,6 +22,9 @@ class Config:
     frame_height: int = 480
     camera_fps: int = 30
     camera_mjpg: bool = True       # MJPG ajuda a manter 30fps (menos latencia)
+    # "v4l2" (exclusivo) | "pipewire" (compartilha a cam com Teams/Discord/etc)
+    capture_backend: str = "v4l2"
+    pipewire_target: str = ""      # no pipewire alvo (vazio = auto/default)
     model_path: str = "~/.local/share/handmouse/hand_landmarker.task"
 
     # landmarks (indices MediaPipe)

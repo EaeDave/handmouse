@@ -10,7 +10,7 @@ import sys
 
 def _selftest() -> int:
     """FR7: verifica uinput gravavel, camera abre e modelo presente."""
-    from .capture import Camera, CameraError
+    from .capture import CameraError, open_camera
     from .config import load_config
     from .output import UinputError, UinputMouse
 
@@ -32,9 +32,12 @@ def _selftest() -> int:
         ok = False
 
     try:
-        c = Camera(cfg.camera_index, cfg.frame_width, cfg.frame_height, cfg.camera_fps, cfg.camera_mjpg)
+        c = open_camera(cfg)
+        frame = c.read()
         c.release()
-        print(f"[ok]      camera abre (indice {cfg.camera_index})")
+        if frame is None:
+            raise CameraError("abriu mas nao recebeu frame")
+        print(f"[ok]      camera ok (backend={cfg.capture_backend}, indice {cfg.camera_index})")
     except CameraError as exc:
         print(f"[FALHOU]  camera: {exc}")
         ok = False
