@@ -1,0 +1,12 @@
+[Unit]
+Description=handmouse - gesture mouse daemon
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/share/handmouse/.venv/bin/handmouse run
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

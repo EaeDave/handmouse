@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# venv
+.venv/
+venv/
+env/
+
+# handmouse runtime data (vive em ~/.local/share/handmouse)
+*.task
+
+# OS / editor
+.DS_Store
+*.swp

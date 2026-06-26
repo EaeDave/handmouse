@@ -1,0 +1,152 @@
+# handmouse
+
+Daemon que controla o mouse pelo movimento da mão via webcam, para **Omarchy
+(Arch + Hyprland / Wayland)**. Move o cursor seguindo a mão e dispara **clique
+esquerdo** num gesto de pinça (polegar + indicador).
+
+---
+
+## Como funciona (regras de comportamento)
+
+- **Controle relativo, tipo trackpad com "clutch".** O cursor anda conforme o
+  *deslocamento* da mão. Tirou a mão do quadro → o cursor **congela**; recolocou
+  a mão em qualquer ponto → continua de onde parou, **sem pulo**. Dá pra
+  "levantar e reposicionar" a mão como quem reposiciona um mouse na mesa.
+- **Sobe pausado.** Ao logar, o serviço inicia **pausado** (não controla nada).
+  Você ativa quando quiser com um atalho (ex.: `SUPER+M`).
+- **Pausar libera a câmera.** Quando pausado, o handmouse **fecha a webcam** —
+  então Teams/Zoom/Meet podem usá-la normalmente. Como o padrão é estar pausado,
+  a câmera fica livre na maior parte do tempo. Ativou o handmouse mas a câmera já
+  está em uso por outro app? Ele avisa **"câmera ocupada"** e continua pausado.
+- **Clique = pinça.** Encostar polegar no indicador dá **um clique esquerdo**.
+  Histerese + debounce evitam cliques duplos acidentais. Duplo-clique = duas
+  pinças rápidas (o sistema junta). **Só clique esquerdo no MVP** (direito,
+  scroll e arrastar ficam para a v2).
+- **Notificação no toggle.** Cada vez que ativa/pausa, aparece uma notificação
+  (via `notify-send`/mako) dizendo o estado atual.
+- **Sem teleporte.** Um "salto" fisicamente impossível do ponto rastreado (ex.:
+  segunda mão entra no quadro, ou glitch de tracking) é ignorado — o cursor nunca
+  voa para longe; no pior caso fica parado por um instante.
+- **Auto-pausa por inatividade.** Sem detectar nenhuma mão por ~30 s, ele pausa
+  sozinho e solta a câmera (rede de segurança para "esqueci ligado").
+- **Sobrevive a suspend/resume.** Se a câmera some em uso, ele re-tenta sem
+  morrer e retoma no mesmo estado quando ela volta.
+
+> Suavização do cursor por **One Euro Filter** (sem tremor parado, sem lag
+> perceptível em movimento). Ajuste fino em `gain` / `oe_min_cutoff` / `oe_beta`.
+
+---
+
+## Instalação
+
+Pré-requisitos: `uv` instalado; webcam funcionando.
+
+```bash
+bash scripts/install.sh
+```
+
+O script é idempotente e faz: venv Python **3.12** (MediaPipe não tem wheels para
+3.13+), instala o pacote, baixa o modelo, aplica a regra udev (com `sudo`),
+garante os grupos `input,video`, instala e recarrega o serviço de usuário, e roda
+o `selftest`.
+
+Depois:
+
+```bash
+# se você acabou de entrar nos grupos input/video, FAÇA LOGOUT/LOGIN antes
+systemctl --user enable --now handmouse.service
+```
+
+### Passo a passo manual (equivalente)
+
+```bash
+uv venv --python 3.12 ~/.local/share/handmouse/.venv
+uv pip install --python ~/.local/share/handmouse/.venv/bin/python -e .
+bash scripts/download-model.sh
+sudo cp udev/99-uinput.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+sudo usermod -aG input,video "$USER"      # depois: logout/login
+mkdir -p ~/.config/systemd/user && cp systemd/handmouse.service ~/.config/systemd/user/
+~/.local/share/handmouse/.venv/bin/handmouse selftest
+systemctl --user enable --now handmouse.service
+```
+
+---
+
+## Keybinds do Hyprland
+
+Já adicionados ao `~/.config/hypr/bindings.conf` (bloco `# handmouse:start` … `# handmouse:end`):
+
+```conf
+# SUPER+M: pausa/retoma (libera/pega a câmera). Sobe pausado: o 1o aperto ativa.
+bindd = SUPER, M, Handmouse toggle (pause/resume), exec, systemctl --user kill -s SIGUSR1 handmouse.service
+# SUPER CTRL+M: (re)liga o serviço, caso esteja parado
+bindd = SUPER CTRL, M, Handmouse start, exec, systemctl --user start handmouse.service
+```
+
+> Nota: o "start" usa **SUPER CTRL+M** — o `SUPER SHIFT+M` já é o Spotify no Omarchy.
+
+---
+
+## Uso
+
+```bash
+handmouse run        # inicia o daemon (default)
+handmouse selftest   # verifica: /dev/uinput gravável, câmera abre, modelo presente
+```
+
+Logs: `journalctl --user -u handmouse -f`. Nível: `HANDMOUSE_LOG=DEBUG`.
+
+---
+
+## Configuração
+
+Opcional, em `~/.config/handmouse/config.toml`. Campos ausentes usam o default.
+
+```toml
+# captura
+camera_index = 0
+frame_width  = 640
+frame_height = 480
+
+# sensibilidade do movimento (norm. -> pixels)
+gain = 2500.0
+
+# suavização (One Euro Filter)
+oe_min_cutoff = 1.0   # menor = mais estável parado
+oe_beta       = 10.0  # maior = menos lag em movimento rápido
+
+# pinça (distância normalizada pelo tamanho da mão)
+pinch_close_threshold = 0.35
+pinch_open_threshold  = 0.55
+pinch_debounce_ms     = 60
+
+# comportamento
+start_paused      = true   # sobe pausado
+notify            = true   # notificação no toggle
+teleport_threshold = 0.25  # salto impossível por frame -> ignorado
+idle_pause_s      = 30     # auto-pausa sem mão por N s (0 = desliga)
+```
+
+---
+
+## Troubleshooting
+
+- **`selftest` falha em uinput** → você não está no grupo `input` ou a regra udev
+  não foi aplicada. Rode `scripts/install.sh` e faça logout/login.
+- **`selftest` falha na câmera** → outro app está usando a webcam, ou o
+  `camera_index` está errado.
+- **Cursor treme parado** → diminua `oe_min_cutoff`.
+- **Cursor com lag ao mover rápido** → aumente `oe_beta`.
+- **Cursor rápido/lento demais** → ajuste `gain`.
+
+---
+
+## Desenvolvimento
+
+```bash
+uv run --with pytest python -m pytest -q
+```
+
+Os testes cobrem a lógica pura (One Euro Filter, detecção de pinça, config). As
+partes de hardware (câmera, uinput no Wayland) são validadas via `selftest` e na
+bancada.
