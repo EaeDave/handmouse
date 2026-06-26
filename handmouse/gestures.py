@@ -1,4 +1,4 @@
-"""Deteccao de pinca (polegar+indicador) com histerese + debounce.
+"""Deteccao de pinca, scroll por gesto e punho com dwell.
 
 `pinch_distance` normaliza pela "largura da mao" (wrist <-> MCP medio) para ficar
 invariante a distancia da camera.
@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import math
 
-EVENT_CLICK = "CLICK"
+EVENT_PRESS = "PRESS"
+EVENT_RELEASE = "RELEASE"
 
 _STATE_OPEN = "OPEN"
 _STATE_CLOSED = "CLOSED"
@@ -28,7 +29,11 @@ def pinch_distance(landmarks, cfg) -> float:
 
 
 class PinchDetector:
-    """Maquina de estados OPEN/CLOSED. update() retorna EVENT_CLICK ao fechar."""
+    """Maquina OPEN/CLOSED para botao esquerdo.
+
+    - CLOSE  -> EVENT_PRESS   (botao down; se abrir rapido vira clique normal)
+    - OPEN   -> EVENT_RELEASE (solta; se estava movendo vira drag)
+    """
 
     def __init__(self, cfg):
         self.close_threshold = cfg.pinch_close_threshold
@@ -39,15 +44,15 @@ class PinchDetector:
 
     def update(self, distance: float, now_ms: int) -> str | None:
         if self.last_change_ms is not None and (now_ms - self.last_change_ms) < self.debounce_ms:
-            return None  # debounce: ignora trocas rapidas demais
+            return None
         if self.state == _STATE_OPEN and distance < self.close_threshold:
             self.state = _STATE_CLOSED
             self.last_change_ms = now_ms
-            return EVENT_CLICK  # clique no instante em que fecha
+            return EVENT_PRESS
         if self.state == _STATE_CLOSED and distance > self.open_threshold:
             self.state = _STATE_OPEN
             self.last_change_ms = now_ms
-            return None
+            return EVENT_RELEASE
         return None
 
     def reset(self) -> None:
@@ -55,28 +60,31 @@ class PinchDetector:
         self.last_change_ms = None
 
 
-# --- deteccao de dedos curvados / punho (toggle de gesto) ---
+# --- dedos / poses -----------------------------------------------------------
 _WRIST = 0
-# (pip, tip) por dedo
 _INDEX = (6, 8)
 _MIDDLE = (10, 12)
 _RING = (14, 16)
 _PINKY = (18, 20)
 _CLOSED_RATIO = 0.85  # tip precisa estar BEM mais perto do pulso que a PIP
+_OPEN_RATIO = 1.15    # tip precisa estar claramente mais longe do pulso que a PIP
 
 
-def _curled(landmarks, pip: int, tip: int) -> bool:
-    """Dedo curvado de verdade: ponta significativamente mais perto do pulso que a PIP.
-
-    O teste antigo (`tip < pip`) era frouxo demais e tratava dedo meio dobrado como
-    fechado. Usamos uma razao estrita para só aceitar fechamento claro.
-    """
+def _tip_pip_ratio(landmarks, pip: int, tip: int) -> float:
     w = landmarks[_WRIST]
     d_tip = math.hypot(landmarks[tip].x - w.x, landmarks[tip].y - w.y)
     d_pip = math.hypot(landmarks[pip].x - w.x, landmarks[pip].y - w.y)
     if d_pip < 1e-6:
-        return False
-    return (d_tip / d_pip) < _CLOSED_RATIO
+        return 1.0
+    return d_tip / d_pip
+
+
+def _curled(landmarks, pip: int, tip: int) -> bool:
+    return _tip_pip_ratio(landmarks, pip, tip) < _CLOSED_RATIO
+
+
+def _extended(landmarks, pip: int, tip: int) -> bool:
+    return _tip_pip_ratio(landmarks, pip, tip) > _OPEN_RATIO
 
 
 def others_curled(landmarks) -> bool:
@@ -94,6 +102,47 @@ def is_fist(landmarks) -> bool:
     Polegar fica fora do criterio porque sua pose varia muito entre pessoas/cameras.
     """
     return _curled(landmarks, *_INDEX) and others_curled(landmarks)
+
+
+def is_scroll_pose(landmarks) -> bool:
+    """Pose de scroll: indicador + medio estendidos; anelar + mindinho curvados.
+
+    Thumb ignorado. A ideia e uma pose tipo 'V' / dois dedos.
+    """
+    return (
+        _extended(landmarks, *_INDEX)
+        and _extended(landmarks, *_MIDDLE)
+        and _curled(landmarks, *_RING)
+        and _curled(landmarks, *_PINKY)
+    )
+
+
+class PoseHold:
+    """Ativa uma pose apos dwell; desativa imediatamente quando a pose quebra."""
+
+    def __init__(self, dwell_ms: int):
+        self.dwell_ms = dwell_ms
+        self._since: int | None = None
+        self.active = False
+
+    def update(self, pose_now: bool, now_ms: int) -> bool:
+        if not pose_now:
+            self._since = None
+            self.active = False
+            return False
+        if self.active:
+            return True
+        if self._since is None:
+            self._since = now_ms
+            return False
+        if (now_ms - self._since) >= self.dwell_ms:
+            self.active = True
+            return True
+        return False
+
+    def reset(self) -> None:
+        self._since = None
+        self.active = False
 
 
 class FistToggle:

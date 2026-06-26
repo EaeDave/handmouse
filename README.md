@@ -23,11 +23,14 @@ esquerdo** num gesto de pinça (polegar + indicador).
   punho de novo **retoma**. É diferente do `SUPER+M`: o gesto é pausa *suave* e a
   **câmera continua ligada** (precisa enxergar a mão pra ver o punho de volta).
   Pra liberar a câmera (Teams) use o `SUPER+M`. Config: `gesture_toggle`/`gesture_dwell_ms`.
-- **Clique = pinça.** Encostar polegar no indicador dá **um clique esquerdo**.
-  Histerese + debounce evitam cliques duplos; e o clique **só conta com os outros
-  dedos abertos** — fechar tudo (punho) não clica. Duplo-clique = duas pinças
-  rápidas (o sistema junta). **Só clique esquerdo no MVP** (direito, scroll e
-  arrastar ficam para a v2).
+- **Clique e arrastar = pinça.** Fechar polegar+indicador faz **botão esquerdo down**;
+  abrir de novo faz **up**. Se você só fecha e abre rápido, vira clique normal. Se
+  mantiver fechado e mover a mão, vira **drag**. A pinça **só conta com os outros
+  dedos abertos** — fechar tudo (punho) não clica.
+- **Scroll por gesto (V / dois dedos).** Indicador + médio **estendidos**, anelar +
+  mindinho **fechados**. Segurou a pose por um dwell curto → entra em **modo scroll**;
+  enquanto isso, o **movimento vertical** da mão vira roda do mouse e o cursor deixa
+  de se mover. Saiu da pose → volta ao cursor normal.
 - **Notificação no toggle.** Cada vez que ativa/pausa, aparece uma notificação
   (via `notify-send`/mako) dizendo o estado atual.
 - **Sem teleporte.** Um "salto" fisicamente impossível do ponto rastreado (ex.:
@@ -40,7 +43,6 @@ esquerdo** num gesto de pinça (polegar + indicador).
 
 > Suavização por **One Euro Filter**, com **sub-pixel accumulation** (movimento fino
 > não se perde) e **aceleração adaptativa** (devagar = preciso, rápido = veloz).
-> Ajuste fino em `gain` / `accel_*` / `oe_min_cutoff` / `oe_beta`.
 
 ---
 
@@ -99,7 +101,7 @@ bindd = SUPER CTRL, M, Handmouse start, exec, systemctl --user start handmouse.s
 ```bash
 handmouse run        # inicia o daemon (default)
 handmouse selftest   # verifica: /dev/uinput gravável, câmera abre, modelo presente
-handmouse tune       # mostra ao vivo pinch/punho/velocidade/fps (não mexe no mouse)
+handmouse tune       # mostra ao vivo pinch/punho/scroll/velocidade/fps (não mexe no mouse)
 ```
 
 Logs: `journalctl --user -u handmouse -f`. Nível: `HANDMOUSE_LOG=DEBUG`.
@@ -118,13 +120,17 @@ frame_height = 480
 camera_fps   = 30
 camera_mjpg  = true   # tenta MJPG p/ segurar fps e baixar latência
 
-
 # sensibilidade do movimento (norm. -> pixels)
 gain = 2500.0
 accel       = true
 accel_min   = 0.4     # ganho efetivo ao mover devagar (precisão)
 accel_max   = 2.0     # ganho efetivo ao mover rápido (velocidade)
 accel_speed = 2.5     # vel. normalizada (un/s) p/ atingir accel_max
+
+# scroll por gesto
+scroll_enabled  = true
+scroll_dwell_ms = 220
+scroll_gain     = 60.0
 
 # suavização (One Euro Filter)
 oe_min_cutoff = 1.0   # menor = mais estável parado
@@ -166,8 +172,10 @@ gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
 - **Cursor treme parado** → diminua `oe_min_cutoff`.
 - **Cursor com lag ao mover rápido** → aumente `oe_beta`.
 - **Cursor rápido/lento demais** → ajuste `gain`.
-- **Clica fácil / sem fechar o dedo** → diminua `pinch_close_threshold` (ex.: 0.25).
+- **Clica fácil / sem fechar o dedo** → diminua `pinch_close_threshold` (ex.: 0.16).
 - **Punho não suspende, ou suspende sem querer** → ajuste `gesture_dwell_ms`, ou desligue com `gesture_toggle = "off"`.
+- **Scroll entra fácil demais** → aumente `scroll_dwell_ms`.
+- **Scroll fraco/forte demais** → ajuste `scroll_gain`.
 - **Muito preciso mas lento / rápido mas arisco** → ajuste `accel_min`, `accel_max`, `accel_speed`.
 - **Quer calibrar vendo números ao vivo** → pare o serviço e rode `handmouse tune`.
 
@@ -179,6 +187,6 @@ gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
 uv run --with pytest python -m pytest -q
 ```
 
-Os testes cobrem a lógica pura (One Euro Filter, detecção de pinça, config). As
-partes de hardware (câmera, uinput no Wayland) são validadas via `selftest` e na
+Os testes cobrem a lógica pura (One Euro Filter, detecção de pinça/scroll/punho, config, output).
+As partes de hardware (câmera, uinput no Wayland) são validadas via `selftest` e na
 bancada.

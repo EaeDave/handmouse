@@ -8,10 +8,11 @@ Deltas de comportamento implementados aqui:
   D1 relativo + clutch       -> reset de last_anchor ao perder a mao.
   D2 sobe pausado            -> paused = cfg.start_paused.
   D4 anti-teleporte          -> salto impossivel num frame e ignorado e re-ancorado.
-  D5 notificacao no toggle    -> notify-send em cada troca de estado.
+  D5 notificacao no toggle   -> notify-send em cada troca de estado.
   D7 pausado solta a camera  -> camera so fica aberta enquanto ativo.
   D8 auto-pause por inatividade -> sem mao por cfg.idle_pause_s segundos -> pausa.
   D9 interruptor por gesto   -> punho alterna pausa SUAVE (cam segue ligada).
+  D10 scroll por gesto       -> pose de 2 dedos com dwell entra em modo scroll.
 """
 
 from __future__ import annotations
@@ -25,7 +26,17 @@ import time
 from .capture import Camera, CameraError
 from .config import Config, load_config
 from .filter import Point2DFilter
-from .gestures import EVENT_CLICK, FistToggle, PinchDetector, is_fist, others_curled, pinch_distance
+from .gestures import (
+    EVENT_PRESS,
+    EVENT_RELEASE,
+    FistToggle,
+    PinchDetector,
+    PoseHold,
+    is_fist,
+    is_scroll_pose,
+    others_curled,
+    pinch_distance,
+)
 from .output import UinputMouse
 from .tracker import HandTracker
 
@@ -57,6 +68,8 @@ class Controller:
         self.pinch = PinchDetector(self.cfg)
         self.suspended = False  # D9: pausa SUAVE via gesto (cam segue ligada)
         self.fist = FistToggle(self.cfg.gesture_dwell_ms) if self.cfg.gesture_toggle == "fist" else None
+        self.scroll_hold = PoseHold(self.cfg.scroll_dwell_ms) if self.cfg.scroll_enabled else None
+        self.scroll_anchor: tuple[float, float] | None = None
         self.tracker: HandTracker | None = None
         self.camera: Camera | None = None
 
@@ -82,6 +95,7 @@ class Controller:
             return
         self.paused = paused
         if paused:
+            self.output.reset_state()
             log.info("pausado (%s)", reason)
             _notify(self.cfg.notify, f"pausado ({reason})")
         else:
@@ -89,6 +103,9 @@ class Controller:
             self.suspended = False         # reativar (keybind) limpa a suspensao por gesto
             if self.fist is not None:
                 self.fist.reset()
+            if self.scroll_hold is not None:
+                self.scroll_hold.reset()
+            self.scroll_anchor = None
             log.info("ativo")
             _notify(self.cfg.notify, "ativo")
 
@@ -102,10 +119,14 @@ class Controller:
         if not hands:
             # D1: mao sumiu -> reseta estado p/ nao "saltar" ao reaparecer
             self.last_anchor = None
+            self.scroll_anchor = None
             self.filter.reset()
             self.pinch.reset()
+            self.output.reset_state()
             if self.fist is not None:
                 self.fist.reset()
+            if self.scroll_hold is not None:
+                self.scroll_hold.reset()
             return
 
         lm = hands[0]
@@ -115,8 +136,10 @@ class Controller:
         if self.fist is not None and self.fist.update(is_fist(lm), timestamp_ms):
             self.suspended = not self.suspended
             self.last_anchor = None
+            self.scroll_anchor = None
             self.filter.reset()
             self.pinch.reset()
+            self.output.reset_state()
             estado = "suspenso (gesto)" if self.suspended else "retomado (gesto)"
             log.info("%s", estado)
             _notify(self.cfg.notify, estado)
@@ -130,6 +153,22 @@ class Controller:
         t = timestamp_ms / 1000.0
         fx, fy = self.filter.filter(anchor.x, anchor.y, t)
 
+        # D10: pose de scroll (dois dedos) com dwell -> modo scroll vertical
+        scroll_pose = self.scroll_hold.update(is_scroll_pose(lm), timestamp_ms) if self.scroll_hold is not None else False
+        if self.scroll_hold is not None and (self.scroll_hold.active or is_scroll_pose(lm)):
+            if self.scroll_anchor is None:
+                self.scroll_anchor = (fx, fy)
+            else:
+                if self.scroll_hold.active:
+                    dy = fy - self.scroll_anchor[1]
+                    self.output.scroll(-dy * self.cfg.scroll_gain)  # move mao p/ cima -> scroll up
+                self.scroll_anchor = (fx, fy)
+            self.last_anchor = (fx, fy)  # mantem sincronizado p/ nao dar pulo ao sair do scroll
+            self._last_t = t
+            self.output.release_left()
+            return
+        self.scroll_anchor = None
+
         if self.last_anchor is None:
             self.last_anchor = (fx, fy)  # 1o frame apos (re)aquisicao: sem movimento
             self._last_t = t
@@ -142,13 +181,17 @@ class Controller:
             thr = self.cfg.teleport_threshold
             if abs(dnx) <= thr and abs(dny) <= thr:  # D4: salto impossivel -> ignora
                 g = self.cfg.gain * self._accel_mult(dnx, dny, dt)
-                self.output.move(dnx * g, dny * g)  # float -> output faz o sub-pixel
+                self.output.move(dnx * g, dny * g)
 
-        # clique: pinca polegar+indicador, mas NAO quando a mao fecha em punho (D9/A)
+        # clique/drag: pinca fecha = down; abre = up. Se mover fechado -> drag.
         d = pinch_distance(lm, self.cfg)
-        if self.pinch.update(d, timestamp_ms) == EVENT_CLICK and not others_curled(lm):
-            self.output.click()
-            log.debug("click (d=%.3f)", d)
+        ev = self.pinch.update(d, timestamp_ms)
+        if ev == EVENT_PRESS and not others_curled(lm):
+            self.output.press_left()
+            log.debug("press (d=%.3f)", d)
+        elif ev == EVENT_RELEASE:
+            self.output.release_left()
+            log.debug("release (d=%.3f)", d)
 
     def _accel_mult(self, dnx: float, dny: float, dt: float) -> float:
         # aceleracao: devagar -> accel_min (preciso); rapido -> accel_max (veloz)
@@ -166,7 +209,9 @@ class Controller:
             self.camera.release()
             self.camera = None
         self.last_anchor = None
+        self.scroll_anchor = None
         self.filter.reset()
+        self.output.reset_state()
 
     def _open_camera(self) -> bool:
         try:
@@ -263,13 +308,14 @@ def run_tune(cfg: Config | None = None) -> int:
                 speed = math.hypot(a.x - state["last"][0], a.y - state["last"][1]) / dt
             state["last"] = (a.x, a.y)
             state["last_t"] = t
-            click = d < cfg.pinch_close_threshold and not others_curled(lm)
+            press = d < cfg.pinch_close_threshold and not others_curled(lm)
             msg = (
                 f"pinch d={d:5.2f} (close<{cfg.pinch_close_threshold:.2f}) "
-                f"{'CLICK' if click else '     '} "
-                f"{'PUNHO' if is_fist(lm) else '     '} | vel={speed:4.1f}/s | fps {fps:4.1f}"
+                f"{'PRESS' if press else '     '} "
+                f"{'PUNHO' if is_fist(lm) else '     '} "
+                f"{'SCROLL' if is_scroll_pose(lm) else '      '} | vel={speed:4.1f}/s | fps {fps:4.1f}"
             )
-        print("\r" + msg.ljust(78), end="", flush=True)
+        print("\r" + msg.ljust(92), end="", flush=True)
 
     camera = Camera(cfg.camera_index, cfg.frame_width, cfg.frame_height, cfg.camera_fps, cfg.camera_mjpg)
     tracker = HandTracker(

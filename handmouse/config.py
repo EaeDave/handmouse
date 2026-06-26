@@ -39,6 +39,11 @@ class Config:
     accel_max: float = 2.0         # multiplicador em movimento rapido (velocidade)
     accel_speed: float = 2.5       # vel. normalizada (un/s) p/ atingir accel_max
 
+    # scroll por gesto
+    scroll_enabled: bool = True
+    scroll_dwell_ms: int = 220     # segurou a pose por este tempo -> entra em scroll
+    scroll_gain: float = 60.0      # delta normalizado vertical -> passos de roda
+
     # One Euro Filter (coords normalizadas [0,1])
     oe_min_cutoff: float = 1.0
     oe_beta: float = 10.0
