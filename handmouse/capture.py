@@ -10,7 +10,7 @@ class CameraError(RuntimeError):
 
 
 class Camera:
-    def __init__(self, index: int, width: int, height: int):
+    def __init__(self, index: int, width: int, height: int, fps: int = 30, mjpg: bool = True):
         self._cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
         if not self._cap.isOpened():
             self._cap.release()
@@ -18,8 +18,11 @@ class Camera:
                 f"nao foi possivel abrir a webcam (indice {index}); "
                 "pode estar em uso por outro app ou ausente"
             )
+        if mjpg:
+            self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        self._cap.set(cv2.CAP_PROP_FPS, fps)
 
     def read(self):
         ok, frame = self._cap.read()

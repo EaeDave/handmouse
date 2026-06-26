@@ -26,16 +26,22 @@ class UinputMouse:
                 "Rode scripts/install.sh e confirme que voce esta no grupo 'input' "
                 "e que a regra udev foi aplicada. Detalhe: %s" % exc
             ) from exc
+        self._acc_x = 0.0
+        self._acc_y = 0.0
 
-    def move(self, dx: int, dy: int) -> None:
-        moved = False
-        if dx:
-            self._ui.write(e.EV_REL, e.REL_X, int(dx))
-            moved = True
-        if dy:
-            self._ui.write(e.EV_REL, e.REL_Y, int(dy))
-            moved = True
-        if moved:
+    def move(self, dx: float, dy: float) -> None:
+        # acumula a fracao de pixel entre frames -> movimento fino nao se perde (sub-pixel)
+        self._acc_x += dx
+        self._acc_y += dy
+        ix = int(self._acc_x)  # trunca p/ zero, guarda o resto
+        iy = int(self._acc_y)
+        self._acc_x -= ix
+        self._acc_y -= iy
+        if ix:
+            self._ui.write(e.EV_REL, e.REL_X, ix)
+        if iy:
+            self._ui.write(e.EV_REL, e.REL_Y, iy)
+        if ix or iy:
             self._ui.syn()
 
     def click(self) -> None:

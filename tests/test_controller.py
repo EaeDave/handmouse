@@ -89,6 +89,7 @@ def _res(lm):
 def _fresh(cfg=None):
     c = Controller(cfg or Config())
     c.cfg.notify = False  # nao dispara notificacoes reais nos testes
+    c.cfg.accel = False   # testes antigos ficam deterministas (sem ganho adaptativo)
     c.output = FakeOut()
     c.filter = IdentFilter()
     c.paused = False
@@ -101,12 +102,13 @@ def test_first_frame_anchors_without_moving():
     assert c.output.moves == []
     assert c.last_anchor == (0.5, 0.5)
 
-
 def test_normal_move_scales_delta_by_gain():
     c = _fresh()
     c.on_result(_res(_landmarks(anchor=(0.5, 0.5))), None, 1000)
     c.on_result(_res(_landmarks(anchor=(0.52, 0.50))), None, 1100)
-    assert c.output.moves == [(50, 0)]  # 0.02 * 2500 = 50
+    dx, dy = c.output.moves[0]
+    assert abs(dx - 50.0) < 1e-9  # 0.02 * 2500 = 50
+    assert dy == 0.0
 
 
 def test_anti_teleport_ignores_impossible_jump():
@@ -204,3 +206,16 @@ def test_keybind_reactivate_clears_soft_suspend():
     c.paused = True
     c._apply_pause(False, "atalho")
     assert c.suspended is False
+
+
+def test_accel_mult_grows_with_speed_and_caps():
+    cfg = Config()
+    c = _fresh(cfg)
+    c.cfg.accel = True
+    c.cfg.accel_min = 0.4
+    c.cfg.accel_max = 2.0
+    c.cfg.accel_speed = 2.5
+    slow = c._accel_mult(0.01, 0.0, 0.02)   # 0.5 un/s
+    fast = c._accel_mult(0.10, 0.0, 0.02)   # 5.0 un/s -> cap
+    assert 0.4 <= slow < fast
+    assert fast == 2.0

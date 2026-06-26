@@ -32,7 +32,7 @@ def _selftest() -> int:
         ok = False
 
     try:
-        c = Camera(cfg.camera_index, cfg.frame_width, cfg.frame_height)
+        c = Camera(cfg.camera_index, cfg.frame_width, cfg.frame_height, cfg.camera_fps, cfg.camera_mjpg)
         c.release()
         print(f"[ok]      camera abre (indice {cfg.camera_index})")
     except CameraError as exc:
@@ -48,6 +48,7 @@ def main(argv=None) -> int:
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("run", help="inicia o daemon (default)")
     sub.add_parser("selftest", help="verifica uinput, camera e modelo e sai")
+    sub.add_parser("tune", help="mostra valores ao vivo p/ calibrar (nao mexe no mouse)")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -57,6 +58,11 @@ def main(argv=None) -> int:
 
     if (args.cmd or "run") == "selftest":
         return _selftest()
+
+    if args.cmd == "tune":
+        from .controller import run_tune
+
+        return run_tune()
 
     from .controller import Controller
 

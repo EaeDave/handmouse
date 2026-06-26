@@ -17,10 +17,16 @@ class HandTracker:
         num_hands: int = 1,
         min_detection_confidence: float = 0.5,
         min_tracking_confidence: float = 0.5,
+        delegate: str = "cpu",
     ):
         model_path = os.path.expanduser(model_path)
+        deleg = (
+            mp_python.BaseOptions.Delegate.GPU
+            if str(delegate).lower() == "gpu"
+            else mp_python.BaseOptions.Delegate.CPU
+        )
         options = vision.HandLandmarkerOptions(
-            base_options=mp_python.BaseOptions(model_asset_path=model_path),
+            base_options=mp_python.BaseOptions(model_asset_path=model_path, delegate=deleg),
             running_mode=vision.RunningMode.LIVE_STREAM,
             num_hands=num_hands,
             min_hand_detection_confidence=min_detection_confidence,

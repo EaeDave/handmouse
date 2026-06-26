@@ -38,8 +38,9 @@ esquerdo** num gesto de pinça (polegar + indicador).
 - **Sobrevive a suspend/resume.** Se a câmera some em uso, ele re-tenta sem
   morrer e retoma no mesmo estado quando ela volta.
 
-> Suavização do cursor por **One Euro Filter** (sem tremor parado, sem lag
-> perceptível em movimento). Ajuste fino em `gain` / `oe_min_cutoff` / `oe_beta`.
+> Suavização por **One Euro Filter**, com **sub-pixel accumulation** (movimento fino
+> não se perde) e **aceleração adaptativa** (devagar = preciso, rápido = veloz).
+> Ajuste fino em `gain` / `accel_*` / `oe_min_cutoff` / `oe_beta`.
 
 ---
 
@@ -98,6 +99,7 @@ bindd = SUPER CTRL, M, Handmouse start, exec, systemctl --user start handmouse.s
 ```bash
 handmouse run        # inicia o daemon (default)
 handmouse selftest   # verifica: /dev/uinput gravável, câmera abre, modelo presente
+handmouse tune       # mostra ao vivo pinch/punho/velocidade/fps (não mexe no mouse)
 ```
 
 Logs: `journalctl --user -u handmouse -f`. Nível: `HANDMOUSE_LOG=DEBUG`.
@@ -113,9 +115,16 @@ Opcional, em `~/.config/handmouse/config.toml`. Campos ausentes usam o default.
 camera_index = 0
 frame_width  = 640
 frame_height = 480
+camera_fps   = 30
+camera_mjpg  = true   # tenta MJPG p/ segurar fps e baixar latência
+
 
 # sensibilidade do movimento (norm. -> pixels)
 gain = 2500.0
+accel       = true
+accel_min   = 0.4     # ganho efetivo ao mover devagar (precisão)
+accel_max   = 2.0     # ganho efetivo ao mover rápido (velocidade)
+accel_speed = 2.5     # vel. normalizada (un/s) p/ atingir accel_max
 
 # suavização (One Euro Filter)
 oe_min_cutoff = 1.0   # menor = mais estável parado
@@ -125,6 +134,9 @@ oe_beta       = 10.0  # maior = menos lag em movimento rápido
 pinch_close_threshold = 0.35
 pinch_open_threshold  = 0.55
 pinch_debounce_ms     = 60
+
+# tracking
+delegate = "cpu"      # "cpu" | "gpu" (GPU é experimental; ver nota abaixo)
 
 # comportamento
 start_paused      = true   # sobe pausado
@@ -136,6 +148,12 @@ idle_pause_s      = 30     # auto-pausa sem mão por N s (0 = desliga)
 gesture_toggle    = "fist" # "fist" | "off"
 gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
 ```
+
+> **GPU / RTX 3060 (mapeado, experimental):** já existe o knob `delegate = "gpu"`
+> e o `HandTracker` já encaminha isso para o MediaPipe Tasks delegate. O default
+> continua **CPU** porque GPU em Linux desktop depende do stack EGL/OpenGL/driver e
+> precisa validação na tua bancada. Quando formos ligar, a troca é de config; sem
+> refactor no código.
 
 ---
 
@@ -150,6 +168,8 @@ gesture_dwell_ms  = 400    # tempo segurando o punho p/ alternar
 - **Cursor rápido/lento demais** → ajuste `gain`.
 - **Clica fácil / sem fechar o dedo** → diminua `pinch_close_threshold` (ex.: 0.25).
 - **Punho não suspende, ou suspende sem querer** → ajuste `gesture_dwell_ms`, ou desligue com `gesture_toggle = "off"`.
+- **Muito preciso mas lento / rápido mas arisco** → ajuste `accel_min`, `accel_max`, `accel_speed`.
+- **Quer calibrar vendo números ao vivo** → pare o serviço e rode `handmouse tune`.
 
 ---
 

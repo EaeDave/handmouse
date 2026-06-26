@@ -17,6 +17,7 @@ Deltas de comportamento implementados aqui:
 from __future__ import annotations
 
 import logging
+import math
 import signal
 import subprocess
 import time
@@ -62,6 +63,7 @@ class Controller:
         self.paused: bool = self.cfg.start_paused
         self.last_anchor: tuple[float, float] | None = None
         self.last_hand_ms: int = _now_ms()
+        self._last_t: float = 0.0  # p/ aceleracao (dt entre frames)
 
         self._running = True
         self._toggle_requested = False
@@ -130,19 +132,33 @@ class Controller:
 
         if self.last_anchor is None:
             self.last_anchor = (fx, fy)  # 1o frame apos (re)aquisicao: sem movimento
+            self._last_t = t
         else:
+            dt = max(t - self._last_t, 1e-3)
+            self._last_t = t
             dnx = fx - self.last_anchor[0]
             dny = fy - self.last_anchor[1]
             self.last_anchor = (fx, fy)
             thr = self.cfg.teleport_threshold
             if abs(dnx) <= thr and abs(dny) <= thr:  # D4: salto impossivel -> ignora
-                self.output.move(round(dnx * self.cfg.gain), round(dny * self.cfg.gain))
+                g = self.cfg.gain * self._accel_mult(dnx, dny, dt)
+                self.output.move(dnx * g, dny * g)  # float -> output faz o sub-pixel
 
         # clique: pinca polegar+indicador, mas NAO quando a mao fecha em punho (D9/A)
         d = pinch_distance(lm, self.cfg)
         if self.pinch.update(d, timestamp_ms) == EVENT_CLICK and not others_curled(lm):
             self.output.click()
             log.debug("click (d=%.3f)", d)
+
+    def _accel_mult(self, dnx: float, dny: float, dt: float) -> float:
+        # aceleracao: devagar -> accel_min (preciso); rapido -> accel_max (veloz)
+        if not self.cfg.accel:
+            return 1.0
+        speed = math.hypot(dnx, dny) / dt
+        if self.cfg.accel_speed <= 0:
+            return self.cfg.accel_max
+        ratio = min(speed / self.cfg.accel_speed, 1.0)
+        return self.cfg.accel_min + (self.cfg.accel_max - self.cfg.accel_min) * ratio
 
     # ---- camera (main thread) ----------------------------------------------
     def _close_camera(self) -> None:
@@ -154,7 +170,7 @@ class Controller:
 
     def _open_camera(self) -> bool:
         try:
-            self.camera = Camera(self.cfg.camera_index, self.cfg.frame_width, self.cfg.frame_height)
+            self.camera = Camera(self.cfg.camera_index, self.cfg.frame_width, self.cfg.frame_height, self.cfg.camera_fps, self.cfg.camera_mjpg)
         except CameraError as exc:
             log.warning("%s", exc)
             return False
@@ -181,6 +197,7 @@ class Controller:
             num_hands=1,
             min_detection_confidence=self.cfg.min_detection_confidence,
             min_tracking_confidence=self.cfg.min_tracking_confidence,
+            delegate=self.cfg.delegate,
         )
         estado = "pausado" if self.paused else "ativo"
         log.info("handmouse iniciado (%s)", estado)
@@ -220,3 +237,61 @@ class Controller:
             self.tracker.close()  # primeiro: garante que nao ha mais callbacks
         self._close_camera()
         self.output.close()
+
+
+def run_tune(cfg: Config | None = None) -> int:
+    """Modo diagnostico: mostra ao vivo distancia de pinca, punho, velocidade e fps.
+    Nao mexe no mouse (sem uinput). Requer a camera livre (pare o servico antes)."""
+    cfg = cfg or load_config()
+    state = {"last": None, "last_t": 0.0, "n": 0, "t0": time.monotonic()}
+
+    def on_result(result, image, timestamp_ms):
+        state["n"] += 1
+        elapsed = time.monotonic() - state["t0"]
+        fps = state["n"] / elapsed if elapsed > 0 else 0.0
+        hands = getattr(result, "hand_landmarks", None)
+        if not hands:
+            msg = f"sem mao              | fps {fps:4.1f}"
+        else:
+            lm = hands[0]
+            d = pinch_distance(lm, cfg)
+            t = timestamp_ms / 1000.0
+            a = lm[cfg.anchor_landmark]
+            speed = 0.0
+            if state["last"] is not None:
+                dt = max(t - state["last_t"], 1e-3)
+                speed = math.hypot(a.x - state["last"][0], a.y - state["last"][1]) / dt
+            state["last"] = (a.x, a.y)
+            state["last_t"] = t
+            click = d < cfg.pinch_close_threshold and not others_curled(lm)
+            msg = (
+                f"pinch d={d:5.2f} (close<{cfg.pinch_close_threshold:.2f}) "
+                f"{'CLICK' if click else '     '} "
+                f"{'PUNHO' if is_fist(lm) else '     '} | vel={speed:4.1f}/s | fps {fps:4.1f}"
+            )
+        print("\r" + msg.ljust(78), end="", flush=True)
+
+    camera = Camera(cfg.camera_index, cfg.frame_width, cfg.frame_height, cfg.camera_fps, cfg.camera_mjpg)
+    tracker = HandTracker(
+        cfg.model_path,
+        on_result,
+        num_hands=1,
+        min_detection_confidence=cfg.min_detection_confidence,
+        min_tracking_confidence=cfg.min_tracking_confidence,
+        delegate=cfg.delegate,
+    )
+    print("handmouse tune — Ctrl+C p/ sair (nao mexe no mouse).")
+    try:
+        while True:
+            frame = camera.read()
+            if frame is None:
+                time.sleep(0.05)
+                continue
+            tracker.submit(frame, _now_ms())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        print()
+        tracker.close()
+        camera.release()
+    return 0

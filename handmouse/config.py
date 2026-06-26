@@ -20,6 +20,8 @@ class Config:
     camera_index: int = 0
     frame_width: int = 640
     frame_height: int = 480
+    camera_fps: int = 30
+    camera_mjpg: bool = True       # MJPG ajuda a manter 30fps (menos latencia)
     model_path: str = "~/.local/share/handmouse/hand_landmarker.task"
 
     # landmarks (indices MediaPipe)
@@ -31,6 +33,11 @@ class Config:
 
     # movimento
     gain: float = 2500.0       # deslocamento normalizado -> pixels
+    # aceleracao (ganho adaptativo: devagar = preciso, rapido = veloz)
+    accel: bool = True
+    accel_min: float = 0.4         # multiplicador em repouso (precisao)
+    accel_max: float = 2.0         # multiplicador em movimento rapido (velocidade)
+    accel_speed: float = 2.5       # vel. normalizada (un/s) p/ atingir accel_max
 
     # One Euro Filter (coords normalizadas [0,1])
     oe_min_cutoff: float = 1.0
@@ -44,6 +51,7 @@ class Config:
 
     min_detection_confidence: float = 0.5
     min_tracking_confidence: float = 0.5
+    delegate: str = "cpu"          # "cpu" | "gpu" (GPU experimental; ver README)
 
     # --- deltas de comportamento (ver README) ---
     start_paused: bool = True       # D2: sobe pausado, SUPER+M ativa
