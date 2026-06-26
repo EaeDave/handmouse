@@ -62,18 +62,25 @@ _INDEX = (6, 8)
 _MIDDLE = (10, 12)
 _RING = (14, 16)
 _PINKY = (18, 20)
+_CLOSED_RATIO = 0.85  # tip precisa estar BEM mais perto do pulso que a PIP
 
 
 def _curled(landmarks, pip: int, tip: int) -> bool:
-    """Dedo curvado: ponta mais perto do pulso que a junta PIP (robusto a orientacao)."""
+    """Dedo curvado de verdade: ponta significativamente mais perto do pulso que a PIP.
+
+    O teste antigo (`tip < pip`) era frouxo demais e tratava dedo meio dobrado como
+    fechado. Usamos uma razao estrita para só aceitar fechamento claro.
+    """
     w = landmarks[_WRIST]
     d_tip = math.hypot(landmarks[tip].x - w.x, landmarks[tip].y - w.y)
     d_pip = math.hypot(landmarks[pip].x - w.x, landmarks[pip].y - w.y)
-    return d_tip < d_pip
+    if d_pip < 1e-6:
+        return False
+    return (d_tip / d_pip) < _CLOSED_RATIO
 
 
 def others_curled(landmarks) -> bool:
-    """Medio + anelar + mindinho curvados (mao indo p/ punho)."""
+    """Medio + anelar + mindinho claramente curvados (mao indo p/ punho)."""
     return (
         _curled(landmarks, *_MIDDLE)
         and _curled(landmarks, *_RING)
@@ -82,7 +89,10 @@ def others_curled(landmarks) -> bool:
 
 
 def is_fist(landmarks) -> bool:
-    """Punho: indicador + medio + anelar + mindinho todos curvados (polegar ignorado)."""
+    """Punho: indicador + medio + anelar + mindinho todos claramente curvados.
+
+    Polegar fica fora do criterio porque sua pose varia muito entre pessoas/cameras.
+    """
     return _curled(landmarks, *_INDEX) and others_curled(landmarks)
 
 

@@ -71,6 +71,16 @@ def _hand(index=True, middle=True, ring=True, pinky=True):
     return pts
 
 
+def _partial_finger_hand():
+    """Dedos levemente dobrados, mas longe de 'completamente fechados'."""
+    pts = [SimpleNamespace(x=0.0, y=0.0) for _ in range(21)]
+    pts[0] = SimpleNamespace(x=0.5, y=1.0)
+    for pip, tip in [(6, 8), (10, 12), (14, 16), (18, 20)]:
+        pts[pip] = SimpleNamespace(x=0.5, y=0.5)
+        pts[tip] = SimpleNamespace(x=0.5, y=0.54)  # ratio ~0.92 -> ainda NAO fechado
+    return pts
+
+
 def test_is_fist_all_curled():
     assert is_fist(_hand(index=False, middle=False, ring=False, pinky=False)) is True
 
@@ -82,6 +92,11 @@ def test_is_fist_false_for_pinch_pose():
 
 def test_is_fist_false_open_hand():
     assert is_fist(_hand()) is False
+
+
+def test_is_fist_false_when_only_partially_closed():
+    assert is_fist(_partial_finger_hand()) is False
+    assert others_curled(_partial_finger_hand()) is False
 
 
 def test_others_curled_needs_all_three():
